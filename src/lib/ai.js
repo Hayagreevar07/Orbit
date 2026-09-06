@@ -1,7 +1,7 @@
 const model = import.meta.env.VITE_OPENROUTER_MODEL || 'mistralai/mistral-small-3.1-24b-instruct:free';
 const apiKey = import.meta.env.VITE_OPENROUTER_API_KEY;
 
-const commandSchema = `Return only valid JSON with this shape: {"message": string, "action": {"type": "add_task" | "complete_task" | "log_study" | "add_mess21_expense" | "none", "title": string, "amount": number, "category": string, "minutes": number, "time": string, "date": string}}. For an expense request, use type "add_mess21_expense", put the rupee value in amount and the expense category in category. Use type "none" when the request is informational or ambiguous.`;
+const commandSchema = `Return only valid JSON with this shape: {"message": string, "action": {"type": "add_task" | "complete_task" | "log_study" | "add_note" | "add_event" | "add_mess21_expense" | "none", "title": string, "text": string, "amount": number, "category": string, "minutes": number, "time": string, "date": string}}. For an expense request, use type "add_mess21_expense", put the rupee value in amount and the expense category in category. Use type "none" when the request is informational or ambiguous.`;
 
 export const aiConfigured = Boolean(apiKey);
 
@@ -22,7 +22,7 @@ export async function interpretCommand(command, context = {}) {
       model,
       temperature: 0.2,
       messages: [
-        { role: 'system', content: `You are Orbit Desk, a precise personal operations assistant. Convert natural language into one safe, reviewable action. Never invent a completed external operation. ${commandSchema}` },
+        { role: 'system', content: `You are the operating intelligence inside Orbit Desk, not a generic chat bot. You own the user's daily planning loop: understand the workspace, decide the next useful operation, and propose one concrete change or answer. Use the supplied workspace context. You may add or complete tasks, log study time, schedule events, save notes, or update Mess-21 expenses. Never claim a write happened before the user approves it and the app verifies it. ${commandSchema}` },
         { role: 'user', content: JSON.stringify({ command, context }) },
       ],
     }),

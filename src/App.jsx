@@ -58,6 +58,7 @@ import { addMess21Expense } from './integrations/mess21';
 import { loadStored, saveStored } from './lib/storage';
 import NotesTasks from './components/NotesTasks';
 import { getDateString, notificationsSupported, sendDailySummary, scheduleTaskNotifications } from './lib/notifications';
+import { MaintenancePage, ProfilePage, SchedulePage, StudyPage } from './components/WorkspacePages';
 
 const initialTasks = [
   { id: 1, time: '09:00', title: 'Deep work: product system', label: 'Build', color: 'lime', done: true },
@@ -81,6 +82,8 @@ const navItems = [
 function App() {
   const [user, setUser] = useState(null);
   const [authReady, setAuthReady] = useState(false);
+  const [demoMode, setDemoMode] = useState(false);
+  const [displayName, setDisplayName] = useState(() => loadStored('displayName', 'Orbit user'));
   const [agentState, setAgentState] = useState({ status: 'Orbit ready', message: 'Watching your day' });
   const [activeNav, setActiveNav] = useState('Today');
   const [tasks, setTasks] = useState(() => loadStored('tasks', initialTasks));
@@ -99,6 +102,7 @@ function App() {
     }
     return onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
+      setDisplayName(currentUser?.displayName || currentUser?.email?.split('@')[0] || 'Orbit user');
       setAuthReady(true);
     });
   }, []);
@@ -113,6 +117,7 @@ function App() {
   useEffect(() => saveStored('studyMinutes', studyMinutes), [studyMinutes]);
   useEffect(() => saveStored('notes', notes), [notes]);
   useEffect(() => saveStored('events', events), [events]);
+  useEffect(() => saveStored('displayName', displayName), [displayName]);
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const summaryKey = `summary-${getDateString()}-${new Date().getHours() >= 18 ? 'evening' : 'morning'}`;
@@ -161,29 +166,35 @@ function App() {
     if (action.type === 'complete_task') {
       setTasks((current) => current.map((task) => task.title.toLowerCase().includes((action.title || '').toLowerCase()) ? { ...task, done: true } : task));
     }
+    if (action.type === 'add_note') {
+      setNotes((current) => [{ id: Date.now(), text: action.text || action.title || 'Orbit note', createdAt: new Date().toISOString() }, ...current]);
+    }
+    if (action.type === 'add_event') {
+      setEvents((current) => [...current, { id: Date.now(), title: action.title || 'Orbit event', date: action.date || getDateString(1), time: action.time || '19:00', type: 'event', done: false }]);
+    }
     setAgentState({ status: 'Action applied', message: 'Your workspace was updated after approval' });
   };
 
   if (!authReady) return <Box className="loading-screen"><CircularProgress /></Box>;
-  if (!user) return <AuthScreen />;
+  if (!user && !demoMode) return <AuthScreen onDemoMode={() => setDemoMode(true)} />;
 
-  const pageTitle = activeNav === 'Today' ? 'Good morning, Hayag' : activeNav;
+  const pageTitle = activeNav === 'Today' ? `Good morning, ${displayName}` : activeNav;
   const pageSubtitle = activeNav === 'Today' ? 'Your day, in one calm place.' : `Keep your ${activeNav.toLowerCase()} moving with less friction.`;
 
   return (
     <Box className="app-shell">
       <AgentIsland status={agentState.status} message={agentState.message} onClick={() => setSnack(agentState.message)} />
       <Drawer variant="temporary" open={menuOpen} onClose={() => setMenuOpen(false)} className="mobile-drawer">
-        <Sidebar activeNav={activeNav} setActiveNav={setActiveNav} closeMenu={() => setMenuOpen(false)} />
+        <Sidebar activeNav={activeNav} setActiveNav={setActiveNav} closeMenu={() => setMenuOpen(false)} displayName={displayName} />
       </Drawer>
-      <aside className="sidebar-desktop"><Sidebar activeNav={activeNav} setActiveNav={setActiveNav} /></aside>
+      <aside className="sidebar-desktop"><Sidebar activeNav={activeNav} setActiveNav={setActiveNav} displayName={displayName} /></aside>
       <main className="main-content">
         <header className="topbar">
           <IconButton className="mobile-menu" onClick={() => setMenuOpen(true)}><MenuRoundedIcon /></IconButton>
           <Box className="breadcrumb"><span>Workspace</span><ChevronRightRoundedIcon /><strong>{activeNav}</strong></Box>
           <Stack direction="row" spacing={1} alignItems="center">
             <Tooltip title="Notifications"><IconButton className="quiet-icon"><NotificationsNoneRoundedIcon /></IconButton></Tooltip>
-            <Tooltip title="Sign out"><IconButton onClick={() => signOut(auth)}><Avatar className="top-avatar">{user.email?.[0]?.toUpperCase() || 'H'}</Avatar></IconButton></Tooltip>
+            <Tooltip title={demoMode ? 'Demo mode' : 'Sign out'}><IconButton onClick={() => demoMode ? setDemoMode(false) : signOut(auth)}><Avatar className="top-avatar">{displayName[0]?.toUpperCase() || 'O'}</Avatar></IconButton></Tooltip>
           </Stack>
         </header>
 
@@ -194,7 +205,7 @@ function App() {
             <Typography className="subheading">{pageSubtitle}</Typography>
           </Box>
           <Stack direction="row" spacing={1} className="heading-actions">
-            <AiAssistant onAction={applyAiAction} onNotify={setSnack} onAgentUpdate={setAgentState} />
+            <AiAssistant onAction={applyAiAction} onNotify={setSnack} onAgentUpdate={setAgentState} context={{ tasks, notes, events, studyMinutes, activeView: activeNav }} />
             <Button variant="outlined" startIcon={<AutoAwesomeRoundedIcon />} onClick={() => setSnack('Daily rhythm refreshed')}>Refresh rhythm</Button>
             <Button variant="contained" startIcon={<AddRoundedIcon />} onClick={addTask}>Add block</Button>
           </Stack>
@@ -207,7 +218,7 @@ function App() {
           <Tab label="Notes & tasks" />
         </Tabs>
 
-        {view === 3 ? <NotesTasks tasks={tasks} setTasks={setTasks} notes={notes} setNotes={setNotes} events={events} setEvents={setEvents} onNotify={setSnack} /> : view === 2 ? <Connections onNotify={setSnack} /> : view === 1 ? <Activity tasks={tasks} /> : <>
+        {activeNav === 'Schedule' ? <SchedulePage tasks={tasks} events={events} /> : activeNav === 'Study map' ? <StudyPage studyMinutes={studyMinutes} onLog={logStudyTime} /> : activeNav === 'Maintenance' ? <MaintenancePage onNotify={setSnack} /> : activeNav === 'Settings' ? <ProfilePage user={user} displayName={displayName} onSaved={setDisplayName} onNotify={setSnack} demoMode={demoMode} /> : view === 3 ? <NotesTasks tasks={tasks} setTasks={setTasks} notes={notes} setNotes={setNotes} events={events} setEvents={setEvents} onNotify={setSnack} /> : view === 2 ? <Connections onNotify={setSnack} /> : view === 1 ? <Activity tasks={tasks} /> : <>
           <section className="overview-grid">
             <Paper className="hero-progress panel-accent" elevation={0}>
               <Box className="progress-top"><Box><Typography className="card-kicker">Daily pulse</Typography><Typography className="hero-stat">{progress}%</Typography></Box><Box className="pulse-icon"><TrendingUpRoundedIcon /></Box></Box>
@@ -247,8 +258,8 @@ function App() {
   );
 }
 
-function Sidebar({ activeNav, setActiveNav, closeMenu }) {
-  return <Box className="sidebar-inner"><Box className="brand"><Box className="brand-mark"><span /><span /><span /></Box><Typography className="brand-name">orbit<span>.</span></Typography></Box><Box className="workspace-switch"><Avatar className="workspace-avatar">H</Avatar><Box><Typography className="workspace-name">Hayag’s space</Typography><Typography className="workspace-type">Personal OS</Typography></Box><MoreHorizRoundedIcon /></Box><Typography className="nav-label">YOUR SPACE</Typography><List className="nav-list">{navItems.map(({ label, icon: Icon }) => <ListItem key={label} disablePadding><ListItemButton selected={activeNav === label} onClick={() => { setActiveNav(label); closeMenu?.(); }}><ListItemIcon><Icon /></ListItemIcon><ListItemText primary={label} /></ListItemButton></ListItem>)}</List><Typography className="nav-label connections-label">SYSTEM</Typography><List className="nav-list"><ListItem disablePadding><ListItemButton onClick={() => { setActiveNav('Connections'); closeMenu?.(); }} selected={activeNav === 'Connections'}><ListItemIcon><AppsRoundedIcon /></ListItemIcon><ListItemText primary="Connections" /><Chip label="2" size="small" /></ListItemButton></ListItem><ListItem disablePadding><ListItemButton><ListItemIcon><SettingsRoundedIcon /></ListItemIcon><ListItemText primary="Settings" /></ListItemButton></ListItem></List><Box className="sidebar-bottom"><Box className="spark-line"><AutoAwesomeRoundedIcon /><Typography>Make room for good work.</Typography></Box><Typography className="muted">Orbit Desk v0.1</Typography></Box></Box>;
+function Sidebar({ activeNav, setActiveNav, closeMenu, displayName }) {
+  return <Box className="sidebar-inner"><Box className="brand"><Box className="brand-mark"><span /><span /><span /></Box><Typography className="brand-name">orbit<span>.</span></Typography></Box><Box className="workspace-switch"><Avatar className="workspace-avatar">{displayName[0]?.toUpperCase() || 'O'}</Avatar><Box><Typography className="workspace-name">{displayName}'s space</Typography><Typography className="workspace-type">Personal OS</Typography></Box><MoreHorizRoundedIcon /></Box><Typography className="nav-label">YOUR SPACE</Typography><List className="nav-list">{navItems.map(({ label, icon: Icon }) => <ListItem key={label} disablePadding><ListItemButton selected={activeNav === label} onClick={() => { setActiveNav(label); closeMenu?.(); }}><ListItemIcon><Icon /></ListItemIcon><ListItemText primary={label} /></ListItemButton></ListItem>)}</List><Typography className="nav-label connections-label">SYSTEM</Typography><List className="nav-list"><ListItem disablePadding><ListItemButton onClick={() => { setActiveNav('Connections'); closeMenu?.(); }} selected={activeNav === 'Connections'}><ListItemIcon><AppsRoundedIcon /></ListItemIcon><ListItemText primary="Connections" /><Chip label="2" size="small" /></ListItemButton></ListItem><ListItem disablePadding><ListItemButton onClick={() => { setActiveNav('Settings'); closeMenu?.(); }} selected={activeNav === 'Settings'}><ListItemIcon><SettingsRoundedIcon /></ListItemIcon><ListItemText primary="Settings" /></ListItemButton></ListItem></List><Box className="sidebar-bottom"><Box className="spark-line"><AutoAwesomeRoundedIcon /><Typography>Make room for good work.</Typography></Box><Typography className="muted">Orbit Desk v0.1</Typography></Box></Box>;
 }
 
 function MaintenanceRow({ icon, label, value }) { return <Box className="maintenance-row"><Box className="maintenance-icon">{icon}</Box><Typography>{label}</Typography><Typography className="muted maintenance-value">{value}</Typography><ChevronRightRoundedIcon className="muted" /></Box>; }

@@ -1,4 +1,4 @@
-const model = import.meta.env.VITE_OPENROUTER_MODEL || 'mistralai/mistral-small-3.1-24b-instruct:free';
+const model = import.meta.env.VITE_OPENROUTER_MODEL || 'mistralai/mistral-small-3.1-24b-instruct';
 const apiKey = import.meta.env.VITE_OPENROUTER_API_KEY;
 
 const commandSchema = `Return only valid JSON with this shape: {"message": string, "action": {"type": "add_task" | "complete_task" | "log_study" | "add_note" | "add_event" | "add_mess21_expense" | "none", "title": string, "text": string, "amount": number, "category": string, "minutes": number, "time": string, "date": string}}. For an expense request, use type "add_mess21_expense", put the rupee value in amount and the expense category in category. Use type "none" when the request is informational or ambiguous.`;
@@ -28,7 +28,10 @@ export async function interpretCommand(command, context = {}) {
     }),
   });
 
-  if (!response.ok) throw new Error(`Mistral request failed with status ${response.status}`);
+  if (!response.ok) {
+    const errorBody = await response.json().catch(() => null);
+    throw new Error(errorBody?.error?.message || `Mistral request failed with status ${response.status}`);
+  }
   const payload = await response.json();
   const content = payload.choices?.[0]?.message?.content || '';
   const json = content.match(/\{[\s\S]*\}/)?.[0];
